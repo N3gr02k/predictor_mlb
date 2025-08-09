@@ -1,40 +1,136 @@
 # src/app.py
-from flask import Flask, render_template, request
+
+from flask import Flask, render_template, request, jsonify, session
+from flask_caching import Cache
 from datetime import datetime
-import pandas as pd
+import joblib
+import os
+import time
 
+# --- Importaciones de nuestros módulos ---
 from .api_client import get_games_for_date
-from .prediction_manager import inicializar_dataframe_pronosticos, calculate_accuracy
-from .asset_loader import load_all_assets
-from .config import PREDICTION_LIMITS
-from .session_manager import handle_user_session
-from .metrics_calculator import calculate_daily_live_metrics
-from .game_processor import process_game
+from .prediction_module import make_prediction
+from .ui_manager import prepare_game_data_for_ui
+from .config import TEAM_NAME_MAP, PREDICTION_LIMITS
+from .status_manager import get_prediction_status
+from . import database_manager as db_manager
+from . import session_manager
 
-app = Flask(__name__, template_folder='templates')
-app.secret_key = 'super_secreto_y_seguro_mlb_predictor'
+# --- Configuración de la App y la Caché ---
+app = Flask(__name__, template_folder='templates', static_folder='static')
+# CAMBIO CLAVE: Usar una variable de entorno para la clave secreta en producción
+app.secret_key = os.environ.get('SECRET_KEY', 'super_secreto_local_para_desarrollo')
+app.config['CACHE_TYPE'] = 'FileSystemCache'
+app.config['CACHE_DIR'] = os.path.join(os.path.dirname(__file__), 'cache')
+cache = Cache(app)
 
-assets = load_all_assets()
+# --- Inicialización de la Base de Datos ---
+db_manager.init_app(app)
+
+# --- Carga de Activos ---
+# CAMBIO CLAVE: Construir la ruta al modelo de forma dinámica
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MODEL_PATH = os.path.join(BASE_DIR, 'ml_model', 'mlb_predictor_model.pkl')
+
+model = joblib.load(MODEL_PATH) if os.path.exists(MODEL_PATH) else None
+if model:
+    print(f"--- [App] Modelo cargado exitosamente desde: {MODEL_PATH} ---")
+else:
+    print(f"--- [App] ERROR CRÍTICO: No se encontró el archivo del modelo en '{MODEL_PATH}'. ---")
+
+FEATURE_ORDER = [
+    'home_recent_era', 'home_recent_whip', 'home_team_ops', 'home_bullpen_era', 
+    'home_park_factor', 'away_recent_era', 'away_recent_whip', 'away_team_ops', 
+    'away_bullpen_era'
+]
+
+def calculate_daily_live_metrics(games_list):
+    evaluated_predictions = sum(1 for g in games_list if g.get('prediction_status') in ['Winner', 'Loser'])
+    winners = sum(1 for g in games_list if g.get('prediction_status') == 'Winner')
+    accuracy = (winners / evaluated_predictions * 100) if evaluated_predictions > 0 else 0
+    return accuracy, winners, evaluated_predictions
+
+@cache.memoize(timeout=900)
+def get_predictions_for_date(date_str):
+    print(f"--- [WORKER] Calculando nuevas predicciones para {date_str} ---")
+    partidos = get_games_for_date(date_str)
+    games_for_display = []
+    if partidos:
+        for i, game in enumerate(partidos):
+            print(f"  -> Procesando partido {i+1}/{len(partidos)}...")
+            try:
+                game_data = prepare_game_data_for_ui(game, [])
+                prediction_result = make_prediction(game, model, FEATURE_ORDER)
+                if prediction_result: game_data.update(prediction_result)
+                
+                db_manager.save_prediction({
+                    'game_id': game.get('gamePk'), 'prediction_date': date_str,
+                    'home_team': game.get('teams', {}).get('home', {}).get('team', {}).get('name', 'N/A'),
+                    'away_team': game.get('teams', {}).get('away', {}).get('team', {}).get('name', 'N/A'),
+                    'prediction': prediction_result
+                })
+                
+                status, outcome = get_prediction_status(game_data, game_data.get('winner', 'N/A'))
+                game_data.update({'prediction_status': status, 'actual_outcome': outcome})
+                
+                if game_data.get('is_final'): db_manager.update_game_result(game_data)
+                
+                games_for_display.append(game_data)
+            except Exception as e:
+                print(f"ERROR CRÍTICO procesando el juego {game.get('gamePk', 'N/A')}: {e}")
+    return games_for_display
 
 @app.route('/', methods=['GET', 'POST'])
 def home():
-    unlocked_game_ids, user_has_reached_limit = handle_user_session(PREDICTION_LIMITS)
-    selected_date = request.form.get('game_date', datetime.now().strftime('%Y-%m-%d'))
-    user_role = request.form.get('user_role', 'Junior')
-    
-    partidos = get_games_for_date(selected_date)
-    mlb_predictions_df = inicializar_dataframe_pronosticos()
-    overall_accuracy, total_winners_global, total_evaluated_predictions_global = calculate_accuracy(mlb_predictions_df)
-    
-    games_for_display = [
-        process_game(game, unlocked_game_ids, mlb_predictions_df, selected_date, user_role, assets) 
-        for game in partidos
-    ]
-    
-    daily_accuracy, daily_winners, daily_evaluated_predictions = calculate_daily_live_metrics(games_for_display, selected_date)
+    start_time = time.time()
+    if not model:
+        return "Error: El modelo de predicción no se ha cargado. Revisa los logs del servidor.", 500
 
-    return render_template('index.html', games=games_for_display, selected_date=selected_date, user_role=user_role,
-                           prediction_limits=PREDICTION_LIMITS, user_has_reached_limit=user_has_reached_limit,
-                           overall_accuracy_global=overall_accuracy, daily_accuracy=daily_accuracy,
-                           daily_winners=daily_winners, total_winners_global=total_winners_global,
-                           daily_evaluated_predictions=daily_evaluated_predictions, total_evaluated_predictions_global=total_evaluated_predictions_global)
+    user_role = request.form.get('user_role', session.get('user_role', 'Junior'))
+    session['user_role'] = user_role
+
+    if request.method == 'POST':
+        selected_games = request.form.getlist('selected_games')
+        session_manager.update_unlocked_games(selected_games)
+
+    unlocked_game_ids, user_has_reached_limit = session_manager.handle_user_session(PREDICTION_LIMITS)
+    
+    selected_date = request.form.get('game_date', datetime.now().strftime('%Y-%m-%d'))
+    
+    base_games_data = get_predictions_for_date(selected_date)
+    
+    games_for_display = []
+    for game_data in base_games_data:
+        game_id = game_data.get('game_id')
+        if user_role in ['Master', 'Administrator'] or game_data.get('is_final') or game_id in unlocked_game_ids:
+            game_data['show_prediction'] = True
+        else:
+            game_data['show_prediction'] = False
+        
+        game_data['is_selected_by_user'] = game_id in unlocked_game_ids
+        games_for_display.append(game_data)
+
+    daily_accuracy, daily_winners, daily_evaluated_predictions = calculate_daily_live_metrics(games_for_display or [])
+    overall_accuracy_global, total_winners_global, total_evaluated_predictions_global = db_manager.calculate_historical_accuracy()
+
+    end_time = time.time()
+    print(f"--- [App] Tiempo total de carga de la página: {end_time - start_time:.4f} segundos ---")
+
+    return render_template('index.html', 
+                           games=games_for_display, 
+                           selected_date=selected_date,
+                           user_role=user_role, 
+                           prediction_limits=PREDICTION_LIMITS,
+                           user_has_reached_limit=user_has_reached_limit,
+                           daily_accuracy=daily_accuracy, 
+                           daily_winners=daily_winners, 
+                           daily_evaluated_predictions=daily_evaluated_predictions,
+                           overall_accuracy_global=overall_accuracy_global,
+                           total_winners_global=total_winners_global, 
+                           total_evaluated_predictions_global=total_evaluated_predictions_global)
+
+if __name__ == '__main__':
+    # El puerto se obtiene de una variable de entorno en producción
+    port = int(os.environ.get('PORT', 5001))
+    # En producción, debug debe ser False
+    app.run(debug=False, host='0.0.0.0', port=port)
