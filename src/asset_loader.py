@@ -1,4 +1,4 @@
-# src/asset_loader.py
+# src/asset_loader.py (VERSIÓN FINAL COMPLETA)
 import joblib
 import pandas as pd
 import os
@@ -6,32 +6,28 @@ import os
 def load_all_assets():
     print("--- [Asset Loader] Iniciando la carga de activos... ---")
     try:
+        # La variable BASE_DIR apunta a la carpeta 'src'
         BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-        
-        model = joblib.load(os.path.join(BASE_DIR, 'ml_model', 'mlb_ultimate_model.pkl'))
-        team_stats_map = joblib.load(os.path.join(BASE_DIR, 'ml_model', 'team_stats_map.pkl'))
-        team_history_map = joblib.load(os.path.join(BASE_DIR, 'ml_model', 'team_history_map.pkl'))
-        
-        df_pitchers = pd.read_csv(os.path.join(BASE_DIR, 'data', 'pitching_stats_lahman.csv'))
-        df_pitchers['IP'] = df_pitchers['ipouts'] / 3
-        df_pitchers['WHIP'] = (df_pitchers['h'] + df_pitchers['bb']) / df_pitchers['IP'].replace(0, pd.NA)
-        df_pitchers['K_per_9'] = (df_pitchers['so'] * 9) / df_pitchers['IP'].replace(0, pd.NA)
-        
-        avg_pitcher_stats = {
-            'era': df_pitchers[df_pitchers['gs'] > 10]['era'].mean(),
-            'whip': df_pitchers[df_pitchers['gs'] > 10]['WHIP'].mean(),
-            'k_per_9': df_pitchers[df_pitchers['gs'] > 10]['K_per_9'].mean()
-        }
-        
+
+        # 1. Cargamos nuestro mejor modelo guardado (el XGBoost optimizado).
+        model_path = os.path.join(BASE_DIR, 'assets', 'mlb_model_final_tuned.joblib')
+        model = joblib.load(model_path)
+        print(f"Modelo cargado desde: {model_path}")
+
+        # 2. Cargamos el historial completo para los cálculos en vivo.
+        data_path = os.path.join(BASE_DIR, '..', 'data', 'historical_games_rich.csv')
+        historical_data = pd.read_csv(data_path, parse_dates=['game_date'])
+        print(f"Datos históricos cargados desde: {data_path}")
+
         print("--- [Asset Loader] Todos los activos cargados exitosamente. ---")
-        
+
+        # Devolvemos un diccionario con los activos esenciales
         return {
             "model": model,
-            "team_stats_map": team_stats_map,
-            "team_history_map": team_history_map,
-            "avg_pitcher_stats": avg_pitcher_stats
+            "historical_data": historical_data
         }
-
-    except Exception as e:
-        print(f"--- [Asset Loader] ERROR CRÍTICO al cargar archivos: {e} ---")
-        return { "model": None, "team_stats_map": {}, "team_history_map": {}, "avg_pitcher_stats": {} }
+        
+    except FileNotFoundError as e:
+        print(f"--- [Asset Loader] ERROR CRÍTICO: No se pudo encontrar un archivo de activo: {e}")
+        print("Asegúrate de haber ejecutado 'build_dataset_v2.py' y '05_hyperparameter_tuning.ipynb'.")
+        return None

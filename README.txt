@@ -2,7 +2,7 @@
 PROYECTO: predictor_mlb - Documentación de Módulos
 ================================================
 Versión: 3.0 (Arquitectura Modular Estable)
-Fecha: 04 de Agosto, 2025
+Fecha: 05 de Agosto, 2025
 
 Este documento describe la función de cada uno de los 13 archivos y módulos clave que componen la aplicación, siguiendo el principio de diseño de "director de orquesta", donde 'app.py' coordina el trabajo de los demás componentes.
 
@@ -12,7 +12,7 @@ Este documento describe la función de cada uno de los 13 archivos y módulos cl
 
 1. **run.py**: 
    - **Función:** Es el **punto de entrada único y oficial** para ejecutar la aplicación.
-   - **Responsabilidad:** Su única misión es importar la aplicación Flask desde 'src.app' y ponerla en marcha. Soluciona todos los problemas de importación de Python al establecer la ruta correcta del proyecto, garantizando que el servidor siempre arranque de forma estable.
+   - **Responsabilidad:** Su única misión es importar la aplicación Flask desde 'src.app' y ponerla en marcha. Soluciona todos los problemas de importación de Python.
 
 2. **requirements.txt**:
    - **Función:** El **manifiesto de dependencias** del proyecto.
@@ -28,7 +28,7 @@ Este documento describe la función de cada uno de los 13 archivos y módulos cl
 
 4. **api_client.py**:
    - **Función:** Nuestra **librería personalizada** para comunicarnos con la API de la MLB.
-   - **Responsabilidad:** Se encarga de construir la URL de la API, realizar la llamada usando la librería 'requests', y devolver los datos de los juegos en un formato de diccionario de Python limpio y predecible.
+   - **Responsabilidad:** Se encarga de construir la URL de la API, realizar la llamada usando la librería `requests`, y devolver los datos de los juegos en un formato de diccionario de Python limpio y predecible.
 
 5. **asset_loader.py**:
    - **Función:** El **cargador de activos** de Machine Learning.
@@ -36,7 +36,7 @@ Este documento describe la función de cada uno de los 13 archivos y módulos cl
 
 6. **config.py**:
    - **Función:** El **archivo de configuración** del proyecto.
-   - **Responsabilidad:** Contiene todas las variables y constantes que no cambian, como 'TEAM_NAME_MAP' y 'PREDICTION_LIMITS'.
+   - **Responsabilidad:** Contiene todas las variables y constantes que no cambian, como `TEAM_NAME_MAP` y `PREDICTION_LIMITS`.
 
 7. **game_processor.py**:
    - **Función:** El **jefe de producción** para un solo partido.
@@ -48,7 +48,7 @@ Este documento describe la función de cada uno de los 13 archivos y módulos cl
 
 9. **prediction_manager.py**:
    - **Función:** El **archivista** o administrador del historial de pronósticos.
-   - **Responsabilidad:** Gestiona el archivo 'mlb_predictions.csv'. Se encarga de leer el historial de predicciones, añadir nuevos pronósticos y calcular la precisión basándose en los resultados guardados.
+   - **Responsabilidad:** Gestiona el archivo `mlb_predictions.csv`. Se encarga de leer el historial de predicciones, añadir nuevos pronósticos y calcular la precisión basándose en los resultados guardados.
 
 10. **prediction_module.py**:
     - **Función:** El **cerebro de predicción** de la aplicación.

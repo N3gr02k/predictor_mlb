@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MLB Predictor - Pronósticos de Partidos</title>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; } .container { margin-top: 30px; } .card { box-shadow: 0 4px 8px rgba(0,0,0,.05); border-radius: .75rem; position: relative; padding-bottom: 40px; }
+        .card-body { padding-top: 40px; position: relative; } .winner-text { color: green; font-weight: bold; } .loser-text { color: red; font-weight: bold; }
+        .pending-text { color: orange; font-weight: bold; } .no-prediction-text { color: gray; font-weight: bold; } .accuracy-box { background-color: #e9ecef; border: 1px solid #ced4da; border-radius: .5rem; padding: 15px; margin-bottom: 30px; text-align: center; }
+        .game-selection-area { background-color: #ffffff; border: 1px solid #dee2e6; border-radius: .5rem; padding: 20px; margin-bottom: 30px; }
+        .game-time { position: absolute; top: 10px; left: 15px; font-size: 0.8em; color: #6c757d; font-weight: bold; }
+        .game-live-status-badge { position: absolute; top: 10px; right: 15px; font-size: 0.8em; padding: 5px 8px; border-radius: 5px; font-weight: bold; }
+        .status-pregame { background-color: #28a745; color: white; } .status-inprogress { background-color: #dc3545; color: white; } .status-final { background-color: #007bff; color: white; }
+        .game-teams-scores-container { display: flex; flex-direction: column; width: 100%; margin: 10px 0; padding: 0 5px; }
+        .team-score-header-row, .team-score-row { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 4px 0; }
+        .team-score-header-row { border-bottom: 1px solid #dee2e6; margin-bottom: 5px; font-size: 0.8em; color: #6c757d; }
+        .team-info-header-placeholder { flex-grow: 1; padding-left: 36px; font-weight: bold; } .team-info { display: flex; align-items: center; flex-grow: 1; min-width: 0; }
+        .team-info .team-logo { width: 28px; height: 28px; margin-right: 8px; } .team-info span.team-name { font-weight: bold; font-size: 0.9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
+        .team-record { font-size: 0.75em; color: #6c757d; margin-left: 8px; white-space: nowrap; } .score-display-header, .score-display { display: flex; gap: 8px; font-size: 0.9em; font-weight: bold; text-align: right; min-width: 50px; justify-content: flex-end; }
+        .pitcher-info { font-size: 0.8em; color: #343a40; margin-top: 5px; text-align: center; } .pitcher-info strong { display: block; font-size: 0.9em; } .pitcher-info small { display: block; font-size: 0.8em; }
+        .card-body hr { margin: 8px 0; } .bottom-right-container { position: absolute; bottom: 10px; right: 15px; } input[type="checkbox"]:disabled:checked { accent-color: #007bff; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2 class="text-center mb-4">Pronósticos de Partidos MLB</h2>
+        <form class="form-inline justify-content-center mb-4" method="POST" action="/"><label for="game_date" class="mr-2">Fecha:</label><input type="date" class="form-control" id="game_date" name="game_date" value="{{ selected_date }}"><label for="user_role" class="mr-2 ml-3">Rol:</label><select class="form-control" id="user_role" name="user_role" onchange="this.form.submit()"><option value="Junior" {% if user_role == 'Junior' %}selected{% endif %}>Junior ({{ prediction_limits.Junior }})</option><option value="Senior" {% if user_role == 'Senior' %}selected{% endif %}>Senior ({{ prediction_limits.Senior }})</option><option value="Master" {% if user_role == 'Master' %}selected{% endif %}>Master (Todos)</option><option value="Administrator" {% if user_role == 'Administrator' %}selected{% endif %}>Administrator (Todos)</option></select><button type="submit" class="btn btn-primary ml-2">Buscar / Actualizar</button></form>
+        <div class="accuracy-box"><h4>Precisión para {{ selected_date }}:<strong style="color: {% if daily_accuracy >= 60 %}green{% elif daily_accuracy >= 50 %}orange{% else %}red{% endif %};">{{ "%.2f"|format(daily_accuracy) }}%</strong></h4><p class="mb-0">({{ daily_winners }} de {{ daily_evaluated_predictions }} pronósticos evaluados)</p><hr><p class="mb-0 text-muted">Precisión Histórica Global: {{ "%.2f"|format(overall_accuracy_global) }}% ({{ total_winners_global }} de {{ total_evaluated_predictions_global }} totales)</p></div>
+        <div class="game-selection-area">
+            <h4 class="text-center mb-3">Selecciona los partidos para ver el pronóstico</h4>
+            {% if user_has_reached_limit %}<p class="text-center text-danger"><strong>¡Has alcanzado tu límite de {{ prediction_limits[user_role] }} pronósticos para hoy!</strong></p>{% endif %}
+            <form method="POST" action="/"><input type="hidden" name="game_date" value="{{ selected_date }}"><input type="hidden" name="user_role" value="{{ user_role }}"><div class="row">
+                    {% for data in games %}<div class="col-md-6 col-lg-4 mb-4"><div class="card h-100"><div class="card-body">
+                                <div class="game-time">{{ data.display_time_or_inning }}</div><div class="game-live-status-badge {% if data.is_final %}status-final{% elif data.is_in_progress %}status-inprogress{% else %}status-pregame{% endif %}">{% if data.is_final %}FINALIZADO{% elif data.is_in_progress %}EN VIVO{% else %}POR INICIAR{% endif %}</div>
+                                <div class="game-teams-scores-container"><div class="team-score-header-row"><div class="team-info-header-placeholder"></div><div class="score-display-header"><span>C</span><span>H</span><span>E</span></div></div>
+                                    <div class="team-score-row"><div class="team-info"><img src="{{ data.away_team_logo }}" alt="" class="team-logo"><span class="team-name">{{ data.game.teams.away.team.name }}</span><span class="team-record">({{ data.away_record_wins }}-{{ data.away_record_losses }})</span></div><div class="score-display"><span>{{ data.away_runs }}</span><span>{{ data.away_hits }}</span><span>{{ data.away_errors }}</span></div></div>
+                                    <div class="team-score-row"><div class="team-info"><img src="{{ data.home_team_logo }}" alt="" class="team-logo"><span class="team-name">{{ data.game.teams.home.team.name }}</span><span class="team-record">({{ data.home_record_wins }}-{{ data.home_record_losses }})</span></div><div class="score-display"><span>{{ data.home_runs }}</span><span>{{ data.home_hits }}</span><span>{{ data.home_errors }}</span></div></div>
+                                </div><hr>
+                                <div class="row">
+                                    <div class="col-6 text-center">{% if data.pitchers.away %}<div class="pitcher-info"><strong>Lanz. Visitante:</strong>{{ data.pitchers.away.fullName }}<small>(ERA: {% if data.pitchers.away.era != '?' %}{{ data.pitchers.away.era }}{% else %}?{% endif %})</small></div>{% else %}<div class="pitcher-info text-muted">Lanz. Visitante: TBD</div>{% endif %}</div>
+                                    <div class="col-6 text-center">{% if data.pitchers.home %}<div class="pitcher-info"><strong>Lanz. Local:</strong>{{ data.pitchers.home.fullName }}<small>(ERA: {% if data.pitchers.home.era != '?' %}{{ data.pitchers.home.era }}{% else %}?{% endif %})</small></div>{% else %}<div class="pitcher-info text-muted">Lanz. Local: TBD</div>{% endif %}</div>
+                                </div><hr>
+                                {% if data.show_prediction %}
+                                    <p class="card-text text-center mt-3">Predicción: <strong>{{ data.winner }}</strong> con <strong>{{ "%.0f"|format(data.confidence * 100) }}%</strong> de confianza.</p>
+                                    <p class="card-text text-center"><strong>Estado: 
+                                        {% if data.prediction_status == 'Winner' %}<span class="winner-text">Winner ✅</span>{% elif data.prediction_status == 'Loser' %}<span class="loser-text">Loser ❌</span>{% elif data.prediction_status == 'Pendiente' %}<span class="pending-text">Pendiente ⏳</span>{% else %}<span class="no-prediction-text">{{ data.prediction_status }}</span>{% endif %}
+                                    </strong>{% if data.actual_outcome != 'N/A' and data.actual_outcome != 'Pendiente' %} (Ganador: {{ data.actual_outcome }}){% endif %}
+                                    </p>
+                                {% elif data.is_in_progress or data.is_final %}<p class="card-text text-center mt-3 text-muted">Juego en curso o finalizado.</p>
+                                {% else %}<p class="card-text text-center mt-3 text-muted">Selecciona para ver el pronóstico.</p>{% endif %}
+                                <div class="bottom-right-container">
+                                    {% if data.is_pre_game %}{% if user_role in ['Master', 'Administrator'] or data.is_selected_by_user %}<input type="checkbox" class="form-check-input" checked disabled>
+                                        {% elif user_has_reached_limit %}<input type="checkbox" name="selected_games" value="{{ data.game_id }}" class="form-check-input" disabled>
+                                        {% else %}<input type="checkbox" name="selected_games" value="{{ data.game_id }}" class="form-check-input">{% endif %}{% endif %}
+                                </div>
+                            </div></div></div>
+                    {% endfor %}</div>
+                <div class="text-center mt-4"><button type="submit" class="btn btn-success btn-lg">Ver Pronósticos Seleccionados</button></div>
+            </form></div></div>
+</body>
+</html>

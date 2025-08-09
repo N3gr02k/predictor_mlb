@@ -1,4 +1,4 @@
-# src/ui_manager.py
+# src/ui_manager.py (Versión Corregida para manejar Diccionarios)
 from datetime import datetime
 
 def prepare_game_data_for_ui(game, unlocked_game_ids):

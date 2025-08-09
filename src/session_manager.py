@@ -1,35 +1,44 @@
 # src/session_manager.py
-from flask import session, request
+
+from flask import session
 from datetime import datetime
 
 def handle_user_session(prediction_limits):
-    selected_date = request.form.get('game_date', datetime.now().strftime('%Y-%m-%d'))
-    user_role = request.form.get('user_role', 'Junior')
+    """
+    Gestiona la sesión del usuario para controlar los límites de predicción diarios.
+    """
+    today_str = datetime.now().strftime('%Y-%m-%d')
+    
+    # Si es un nuevo día, reiniciamos el contador de predicciones del usuario.
+    if session.get('date') != today_str:
+        session['date'] = today_str
+        session['unlocked_games'] = [] # Lista de IDs de juegos vistos
+    
+    # Asegurarnos de que la lista exista en la sesión
+    if 'unlocked_games' not in session:
+        session['unlocked_games'] = []
 
-    if 'revealed_predictions' not in session:
-        session['revealed_predictions'] = []
+    user_role = session.get('user_role', 'Junior') # Por defecto, el rol es Junior
+    limit = prediction_limits.get(user_role, 2)
+    
+    unlocked_count = len(session['unlocked_games'])
+    has_reached_limit = unlocked_count >= limit
+    
+    print(f"--- [Session] Rol: {user_role}, Límite: {limit}, Vistos: {unlocked_count}, Límite alcanzado: {has_reached_limit} ---")
+    
+    return session['unlocked_games'], has_reached_limit
 
-    current_revealed_entry = next((item for item in session['revealed_predictions'] if item['date'] == selected_date and item['role'] == user_role), None)
-
-    if current_revealed_entry is None:
-        current_revealed_entry = {'date': selected_date, 'role': user_role, 'game_ids': []}
-        session['revealed_predictions'].append(current_revealed_entry)
-        session.modified = True
-
-    if request.method == 'POST':
-        selected_game_ids_from_post = request.form.getlist('selected_games')
-        if selected_game_ids_from_post:
-            limit = prediction_limits.get(user_role, 0)
-            if 'game_ids' not in current_revealed_entry:
-                current_revealed_entry['game_ids'] = []
-            newly_revealed_ids = []
-            for game_id_to_add in selected_game_ids_from_post:
-                if game_id_to_add not in current_revealed_entry['game_ids'] and len(current_revealed_entry['game_ids']) + len(newly_revealed_ids) < limit:
-                    newly_revealed_ids.append(game_id_to_add)
-            current_revealed_entry['game_ids'].extend(newly_revealed_ids)
-            session.modified = True
-
-    unlocked_game_ids = current_revealed_entry.get('game_ids', [])
-    user_has_reached_limit = len(unlocked_game_ids) >= prediction_limits.get(user_role, 0) and user_role not in ['Master', 'Administrator']
-
-    return unlocked_game_ids, user_has_reached_limit
+def update_unlocked_games(selected_games):
+    """
+    Añade los nuevos juegos seleccionados por el usuario a su sesión.
+    """
+    if 'unlocked_games' not in session:
+        session['unlocked_games'] = []
+    
+    # Usamos un set para evitar duplicados y luego lo convertimos de nuevo a lista
+    unlocked_set = set(session['unlocked_games'])
+    for game_id in selected_games:
+        unlocked_set.add(int(game_id))
+    
+    session['unlocked_games'] = list(unlocked_set)
+    session.modified = True # Importante para que Flask guarde los cambios en la sesión

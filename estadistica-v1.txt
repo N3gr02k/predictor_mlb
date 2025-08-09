@@ -1,0 +1,33 @@
+
+========================================
+Características del Modelo Predictor MLB v1
+========================================
+
+El modelo utiliza un total de 36 características para cada partido,
+dividiéndose en 18 para el equipo local y 18 para el equipo visitante.
+
+----------------------------------------
+A. Estadísticas Ofensivas y de Equipo (15 por equipo)
+----------------------------------------
+1.  ops: Porcentaje de Embasado + Slugging (Poder y habilidad para llegar a base).
+2.  avg: Promedio de Bateo (Frecuencia de hits).
+3.  hr_per_g: Jonrones por Juego (Poder de largo alcance).
+4.  rbi_per_g: Carreras Impulsadas por Juego (Producción de carreras).
+5.  sb_per_g: Bases Robadas por Juego (Velocidad y agresividad).
+6.  xbh_per_g: Extra Bases por Juego (Dobles, triples, jonrones).
+7.  lob_per_g: Dejados en Base por Juego (Oportunidades de anotar perdidas).
+8.  gidp_per_g: Bateos para Doble Play por Juego (Índice de rallys terminados).
+9.  sb_eff: Eficiencia de Robo de Bases (Éxito al intentar robar).
+10. whip: Bases por bolas y Hits por Inning Lanzado (Control del pitcheo del equipo).
+11. k_per_9: Ponches por 9 Innings (Dominio del pitcheo del equipo).
+12. saves_per_g: Salvamentos por Juego (Efectividad del cerrador).
+13. errors_per_g: Errores por Juego (Calidad de la defensa).
+14. dp_per_g: Doble Plays realizados por Juego (Eficiencia defensiva).
+15. streak_pct: Porcentaje de Victorias en los últimos 10 juegos (Racha o momento del equipo).
+
+----------------------------------------
+B. Estadísticas del Lanzador Abridor (3 por equipo)
+----------------------------------------
+16. pitcher_era: Promedio de Carreras Limpias (Efectividad general del lanzador).
+17. pitcher_whip: WHIP del lanzador (Control del lanzador).
+18. pitcher_k_per_9: Ponches por 9 Innings del lanzador (Dominio del lanzador).
