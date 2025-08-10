@@ -45,20 +45,36 @@
                                 <div class="game-live-status-badge {% if data.is_final %}status-final{% elif data.is_in_progress %}status-inprogress{% else %}status-pregame{% endif %}">
                                     {% if data.is_final %}FINALIZADO{% elif data.is_in_progress %}EN VIVO{% else %}POR INICIAR{% endif %}
                                 </div>
+                                
+                                <!-- SECCIÓN DEL MARCADOR -->
                                 <div class="game-teams-scores-container">
+                                    <div class="team-score-header-row">
+                                        <div class="team-info-header-placeholder">EQUIPO</div>
+                                        <div class="score-display-header"><span>C</span><span>H</span><span>E</span></div>
+                                    </div>
                                     <div class="team-score-row">
                                         <div class="team-info">
                                             <img src="{{ data.away_team_logo }}" alt="" class="team-logo">
                                             <span class="team-name">{{ data.game.teams.away.team.name }}</span>
+                                            <span class="team-record">({{ data.away_record_wins }}-{{ data.away_record_losses }})</span>
+                                        </div>
+                                        <div class="score-display">
+                                            <span>{{ data.away_runs }}</span><span>{{ data.away_hits }}</span><span>{{ data.away_errors }}</span>
                                         </div>
                                     </div>
                                     <div class="team-score-row">
                                         <div class="team-info">
                                             <img src="{{ data.home_team_logo }}" alt="" class="team-logo">
                                             <span class="team-name">{{ data.game.teams.home.team.name }}</span>
+                                            <span class="team-record">({{ data.home_record_wins }}-{{ data.home_record_losses }})</span>
+                                        </div>
+                                        <div class="score-display">
+                                            <span>{{ data.home_runs }}</span><span>{{ data.home_hits }}</span><span>{{ data.home_errors }}</span>
                                         </div>
                                     </div>
-                                </div><hr>
+                                </div>
+                                <!-- FIN DE LA SECCIÓN DEL MARCADOR -->
+                                <hr>
                                 
                                 {% if data.show_prediction %}
                                     <p class="card-text text-center mt-3">Predicción: <strong>{{ data.winner }}</strong> con <strong>{{ "%.0f"|format(data.confidence * 100) }}%</strong> de confianza.</p>
@@ -90,9 +106,11 @@
                     </div>
                     {% endfor %}
                 </div>
+                {% if games %}
                 <div class="text-center mt-4">
                     <button type="submit" class="btn btn-success btn-lg">Ver Pronósticos Seleccionados</button>
                 </div>
+                {% endif %}
             </form>
         </div>
     </div>
