@@ -1,21 +1,30 @@
 # src/build_dataset.py
 
-import sys
-import os
+import data_enrichment as de
 from datetime import datetime, timedelta
 import pandas as pd
 import requests
 import time
 import calendar
 
-# --- Configuración del Path de Python ---
-# Añade la carpeta raíz del proyecto al path para que podamos importar nuestros módulos.
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(project_root)
-
-# Ahora podemos importar desde 'src'
-from src.prediction_module import get_recent_pitcher_stats, get_team_momentum, PARK_FACTORS
-from src.api_client import get_games_for_date
+def get_games_for_date(date):
+    """
+    Obtiene la lista de partidos finalizados para una fecha específica.
+    """
+    print(f"\n--- Obteniendo partidos para la fecha: {date.strftime('%Y-%m-%d')} ---")
+    schedule_url = f"{de.BASE_API_URL}/schedule"
+    schedule_params = {'sportId': 1, 'date': date.strftime('%Y-%m-%d')}
+    try:
+        response = requests.get(schedule_url, params=schedule_params, timeout=15)
+        response.raise_for_status()
+        schedule_data = response.json().get('dates', [])
+        if not schedule_data:
+            return []
+        # Filtramos para asegurarnos de que solo procesamos juegos que realmente terminaron
+        return [game for game in schedule_data[0].get('games', []) if game['status']['abstractGameState'] == 'Final']
+    except requests.exceptions.RequestException as e:
+        print(f"Error al obtener el calendario: {e}")
+        return []
 
 def process_game_data(game):
     """
@@ -27,7 +36,7 @@ def process_game_data(game):
 
         # Obtenemos los abridores del boxscore, que es la fuente más fiable para juegos pasados
         game_pk = game['gamePk']
-        boxscore_url = f"https://statsapi.mlb.com/api/v1/game/{game_pk}/boxscore"
+        boxscore_url = f"{de.BASE_API_URL}/game/{game_pk}/boxscore"
         boxscore_response = requests.get(boxscore_url, timeout=15)
         boxscore_data = boxscore_response.json()
         
@@ -42,14 +51,15 @@ def process_game_data(game):
         print(f"Procesando: {away_team['name']} @ {home_team['name']}...")
 
         # Recopilamos todas las características usando nuestro motor de enriquecimiento
-        home_pitcher_stats = get_recent_pitcher_stats(home_starter_id, game_season, game_date)
-        home_momentum = get_team_momentum(home_team['id'], game_season, game_date)
+        home_pitcher_stats = de.get_recent_pitcher_stats(home_starter_id, game_season, game_date)
+        home_momentum = de.get_team_momentum(home_team['id'], game_season, game_date)
         
-        venue_name = game.get('venue', {}).get('name')
-        home_park_factor = PARK_FACTORS.get(venue_name)
+        team_details_response = requests.get(f"{de.BASE_API_URL}/teams/{home_team['id']}")
+        venue_name = team_details_response.json()['teams'][0]['venue']['name']
+        home_park = de.get_park_factor(venue_name)
 
-        away_pitcher_stats = get_recent_pitcher_stats(away_starter_id, game_season, game_date)
-        away_momentum = get_team_momentum(away_team['id'], game_season, game_date)
+        away_pitcher_stats = de.get_recent_pitcher_stats(away_starter_id, game_season, game_date)
+        away_momentum = de.get_team_momentum(away_team['id'], game_season, game_date)
 
         # Construimos el diccionario de características
         features = {
@@ -62,7 +72,7 @@ def process_game_data(game):
             'home_recent_whip': home_pitcher_stats.get('recent_whip'),
             'home_team_ops': float(home_momentum.get('team_ops', 0) if home_momentum.get('team_ops') else 0),
             'home_bullpen_era': home_momentum.get('bullpen_era'),
-            'home_park_factor': home_park_factor,
+            'home_park_factor': home_park.get('park_factor'),
             'away_recent_era': away_pitcher_stats.get('recent_era'),
             'away_recent_whip': away_pitcher_stats.get('recent_whip'),
             'away_team_ops': float(away_momentum.get('team_ops', 0) if away_momentum.get('team_ops') else 0),
@@ -74,7 +84,7 @@ def process_game_data(game):
         return features
 
     except Exception as e:
-        print(f"\n[ERROR] No se pudo procesar el partido {game.get('gamePk', 'N/A')}: {e}")
+        print(f"\n[ERROR] No se pudo procesar el partido {game['gamePk']}: {e}")
         return None
 
 # ===================================================================
@@ -95,7 +105,7 @@ if __name__ == "__main__":
         
         for day in range(1, num_days + 1):
             current_date = datetime(YEAR, month, day)
-            games_on_date = get_games_for_date(current_date.strftime('%Y-%m-%d'))
+            games_on_date = get_games_for_date(current_date)
             
             for game in games_on_date:
                 game_data = process_game_data(game)
@@ -108,14 +118,13 @@ if __name__ == "__main__":
         # Convertimos la lista de diccionarios a un DataFrame de Pandas
         dataset = pd.DataFrame(all_game_features)
         
-        # Guardamos el dataset en un archivo CSV en la raíz del proyecto
+        # Guardamos el dataset en un archivo CSV
         output_filename = f"mlb_dataset_{YEAR}_season.csv"
-        output_path = os.path.join(project_root, output_filename)
-        dataset.to_csv(output_path, index=False)
+        dataset.to_csv(output_filename, index=False)
         
         print("\n" + "="*50)
         print("PROCESO COMPLETADO")
-        print(f"Se ha creado el dataset '{output_path}' con {len(dataset)} partidos.")
+        print(f"Se ha creado el dataset '{output_filename}' con {len(dataset)} partidos.")
         print("="*50)
         print("Primeras 5 filas del dataset:")
         print(dataset.head())
