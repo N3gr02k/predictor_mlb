@@ -1,6 +1,6 @@
 # src/app.py
 
-from flask import Flask, render_template, request, jsonify, session
+from flask import Flask, render_template, request, session
 from flask_caching import Cache
 from datetime import datetime
 import joblib
@@ -18,7 +18,7 @@ from . import session_manager
 
 # --- Configuración de la App y la Caché ---
 app = Flask(__name__, template_folder='templates', static_folder='static')
-app.secret_key = os.environ.get('SECRET_KEY', 'super_secreto_local_para_desarrollo') # Usa una variable de entorno en producción
+app.secret_key = os.environ.get('SECRET_KEY', 'super_secreto_local_para_desarrollo')
 app.config['CACHE_TYPE'] = 'FileSystemCache'
 app.config['CACHE_DIR'] = os.path.join(os.path.dirname(__file__), 'cache')
 cache = Cache(app)
@@ -29,7 +29,6 @@ db_manager.init_app(app)
 # --- Carga de Activos ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, 'ml_model', 'mlb_predictor_model.pkl')
-
 model = joblib.load(MODEL_PATH) if os.path.exists(MODEL_PATH) else None
 if model:
     print(f"--- [App] Modelo cargado exitosamente desde: {MODEL_PATH} ---")
@@ -48,12 +47,12 @@ def calculate_daily_live_metrics(games_list):
     accuracy = (winners / evaluated_predictions * 100) if evaluated_predictions > 0 else 0
     return accuracy, winners, evaluated_predictions
 
-@cache.memoize(timeout=3600) # Aumentamos el timeout a 1 hora
+@cache.memoize(timeout=900) # La caché sigue siendo de 15 minutos
 def get_predictions_for_date(date_str):
     """
-    Esta es la función de trabajo pesado. Solo debe ser llamada por el script de fondo.
+    Esta es la función de trabajo pesado. Ahora es llamada por la app si la caché está vacía.
     """
-    print(f"--- [WORKER] Calculando nuevas predicciones para {date_str} ---")
+    print(f"--- [WORKER] La caché para {date_str} está vacía o expirada. Calculando nuevas predicciones... ---")
     partidos = get_games_for_date(date_str)
     games_for_display = []
     if partidos:
@@ -98,18 +97,11 @@ def home():
     
     selected_date = request.form.get('game_date', datetime.now().strftime('%Y-%m-%d'))
     
-    # CAMBIO CLAVE: Ya no calculamos. Solo intentamos leer la caché.
-    cache_key = f"memoize_get_predictions_for_date_{selected_date}"
-    games_for_display = cache.get(cache_key)
+    # CAMBIO CLAVE: La página ahora espera a que la caché se llene si es necesario.
+    base_games_data = get_predictions_for_date(selected_date)
     
-    if games_for_display is None:
-        # Si la caché está vacía, mostramos una lista vacía y un mensaje.
-        games_for_display = []
-        print(f"--- [App] La caché para {selected_date} está vacía. El worker de fondo debe ejecutarse. ---")
-
-    # Personalizamos la visualización para el usuario actual
-    final_games_for_display = []
-    for game_data in games_for_display:
+    games_for_display = []
+    for game_data in base_games_data:
         game_id = game_data.get('game_id')
         if user_role in ['Master', 'Administrator'] or game_data.get('is_final') or game_id in unlocked_game_ids:
             game_data['show_prediction'] = True
@@ -117,16 +109,16 @@ def home():
             game_data['show_prediction'] = False
         
         game_data['is_selected_by_user'] = game_id in unlocked_game_ids
-        final_games_for_display.append(game_data)
+        games_for_display.append(game_data)
 
-    daily_accuracy, daily_winners, daily_evaluated_predictions = calculate_daily_live_metrics(final_games_for_display or [])
+    daily_accuracy, daily_winners, daily_evaluated_predictions = calculate_daily_live_metrics(games_for_display or [])
     overall_accuracy_global, total_winners_global, total_evaluated_predictions_global = db_manager.calculate_historical_accuracy()
 
     end_time = time.time()
     print(f"--- [App] Tiempo total de carga de la página: {end_time - start_time:.4f} segundos ---")
 
     return render_template('index.html', 
-                           games=final_games_for_display, 
+                           games=games_for_display, 
                            selected_date=selected_date,
                            user_role=user_role, 
                            prediction_limits=PREDICTION_LIMITS,
@@ -140,5 +132,4 @@ def home():
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5001))
-    # En producción, debug debe ser False
     app.run(debug=False, host='0.0.0.0', port=port)
