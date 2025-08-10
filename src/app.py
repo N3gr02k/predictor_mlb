@@ -29,6 +29,7 @@ db_manager.init_app(app)
 # --- Carga de Activos ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, 'ml_model', 'mlb_predictor_model.pkl')
+
 model = joblib.load(MODEL_PATH) if os.path.exists(MODEL_PATH) else None
 if model:
     print(f"--- [App] Modelo cargado exitosamente desde: {MODEL_PATH} ---")
@@ -139,4 +140,5 @@ def home():
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5001))
+    # En producción, debug debe ser False
     app.run(debug=False, host='0.0.0.0', port=port)
