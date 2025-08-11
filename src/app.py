@@ -1,6 +1,6 @@
 # src/app.py
 
-from flask import Flask, render_template, request, session
+from flask import Flask, render_template, request, jsonify, session
 from flask_caching import Cache
 from datetime import datetime
 import joblib
@@ -28,7 +28,9 @@ db_manager.init_app(app)
 
 # --- Carga de Activos ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_PATH = os.path.join(BASE_DIR, 'ml_model', 'mlb_predictor_model.pkl')
+# CAMBIO CLAVE: Cargar el nuevo modelo v2
+MODEL_PATH = os.path.join(BASE_DIR, 'ml_model', 'mlb_predictor_model_v2.pkl') 
+
 model = joblib.load(MODEL_PATH) if os.path.exists(MODEL_PATH) else None
 if model:
     print(f"--- [App] Modelo cargado exitosamente desde: {MODEL_PATH} ---")
@@ -47,7 +49,7 @@ def calculate_daily_live_metrics(games_list):
     accuracy = (winners / evaluated_predictions * 100) if evaluated_predictions > 0 else 0
     return accuracy, winners, evaluated_predictions
 
-@cache.memoize(timeout=900) # La caché sigue siendo de 15 minutos
+@cache.memoize(timeout=900)
 def get_predictions_for_date(date_str):
     """
     Esta es la función de trabajo pesado. Ahora es llamada por la app si la caché está vacía.
@@ -97,7 +99,6 @@ def home():
     
     selected_date = request.form.get('game_date', datetime.now().strftime('%Y-%m-%d'))
     
-    # CAMBIO CLAVE: La página ahora espera a que la caché se llene si es necesario.
     base_games_data = get_predictions_for_date(selected_date)
     
     games_for_display = []
